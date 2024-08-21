@@ -12,6 +12,17 @@
             font-family: Arial, sans-serif;
             background-color: #f4f4f4;
         }
+        #dev-btn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: black;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+        }
         #console {
             width: 200px;
             background-color: #000;
@@ -21,6 +32,7 @@
             overflow-y: auto;
             height: 100%;
             white-space: pre-wrap;
+            display: none; /* 最初は非表示 */
         }
         #game-area {
             display: flex;
@@ -89,6 +101,7 @@
     </style>
 </head>
 <body>
+    <button id="dev-btn">Dev</button>
     <div id="console"></div>
     <div id="game-area">
         <div id="game-board">
@@ -124,10 +137,12 @@
         const restartBtn = document.getElementById('restart-btn');
         const replayBtn = document.getElementById('replay-btn');
         const consoleElement = document.getElementById('console');
+        const devBtn = document.getElementById('dev-btn');
 
         let playerHistory = [];
         let computerHistory = [];
         let isReplaying = false;
+        let replayTimeouts = [];
 
         const winningCombinations = [
             [0, 1, 2],
@@ -140,13 +155,17 @@
             [2, 4, 6]
         ];
 
+        devBtn.addEventListener('click', () => {
+            consoleElement.style.display = consoleElement.style.display === 'none' ? 'block' : 'none';
+        });
+
         function logBoardState(prefix) {
             let boardState = '';
             cells.forEach((cell) => {
                 boardState += cell.textContent === '○' ? 'o' : cell.textContent === '×' ? 'x' : '-';
             });
-            consoleElement.textContent += `${prefix} ${boardState}\n`; // プレフィックス付きで出力
-            consoleElement.scrollTop = consoleElement.scrollHeight; // 最新のログを表示
+            consoleElement.textContent += `${prefix} ${boardState}\n`;
+            consoleElement.scrollTop = consoleElement.scrollHeight;
         }
 
         function checkWinner(marker) {
@@ -191,34 +210,29 @@
         }
 
         function computerMove() {
-            // 1. 勝利可能性の確認
             let winningMove = findWinningMove('×');
             if (winningMove !== null) {
                 placeMarker(cells[winningMove], '×');
                 return;
             }
 
-            // 2. 必勝法の実行
             let strategicMove = findStrategicMove('×');
             if (strategicMove !== null) {
                 placeMarker(cells[strategicMove], '×');
                 return;
             }
 
-            // 3. 相手の勝利阻止
             let blockingMove = findWinningMove('○');
             if (blockingMove !== null) {
                 placeMarker(cells[blockingMove], '×');
                 return;
             }
 
-            // 4. 中心の配置
             if (cells[4].textContent === '') {
                 placeMarker(cells[4], '×');
                 return;
             }
 
-            // 5. ランダムな場所への配置
             const emptyCells = Array.from(cells).filter(cell => cell.textContent === '');
             if (emptyCells.length === 0) return;
 
@@ -255,9 +269,11 @@
         }
 
         function resetGame() {
+            replayTimeouts.forEach(timeout => clearTimeout(timeout)); // リプレイのタイムアウトを全てクリア
+            replayTimeouts = []; // タイムアウトリストをリセット
             cells.forEach(cell => {
                 cell.textContent = '';
-                cell.style.backgroundColor = ''; // 背景色をリセット
+                cell.style.backgroundColor = '';
                 cell.classList.remove('disabled');
             });
             playerHistory = [];
@@ -278,7 +294,7 @@
         }
 
         function replayGame() {
-            resetGame(); // 盤面をクリア
+            resetGame();
             isReplaying = true;
 
             const logLines = consoleElement.textContent.trim().split('\n').filter(line => line.startsWith('you:') || line.startsWith('cpu:'));
@@ -303,20 +319,19 @@
                     });
 
                     index++;
-                    setTimeout(nextMove, 1000); // 1秒ごとに次の手を表示
+                    replayTimeouts.push(setTimeout(nextMove, 1000)); // タイムアウトIDを保存
                 } else {
-                    // 3つ揃っているか確認し、揃っていればハイライトする
                     ['○', '×'].forEach(marker => {
                         if (checkWinner(marker)) {
                             setTimeout(() => {
                                 showPopup(marker === '○' ? 'あなたの勝ち！' : 'コンピューターの勝ち！');
-                            }, 1000); // 1秒後にポップアップを表示
+                            }, 1000);
                         }
                     });
                 }
             }
 
-            nextMove(); // リプレイを開始
+            nextMove();
         }
 
         cells.forEach(cell => {
@@ -334,7 +349,6 @@
         restartBtn.addEventListener('click', resetGame);
         replayBtn.addEventListener('click', replayGame);
 
-        // ゲーム開始時に「Game Start」をコンソールに出力
         consoleElement.textContent = 'Game Start\n';
     </script>
 </body>
