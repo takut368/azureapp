@@ -32,7 +32,7 @@
             overflow-y: auto;
             height: 100%;
             white-space: pre-wrap;
-            display: none; /* 最初は非表示 */
+            display: none;
         }
         #game-area {
             display: flex;
@@ -40,6 +40,17 @@
             justify-content: center;
             align-items: center;
             flex-grow: 1;
+        }
+        #countdown {
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+            transition: all 0.1s ease;
+            height: 2.3rem;
+            line-height: 2.3rem;
+        }
+        #turn-indicator {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
         }
         #game-board {
             display: grid;
@@ -54,10 +65,21 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 2rem;
+            font-size: 3rem;
             background-color: #fff;
             border: 1px solid #ccc;
             cursor: pointer;
+        }
+        .cell.next-to-remove {
+            animation: blink 3s infinite;
+        }
+        @keyframes blink {
+            0%, 50% {
+                box-shadow: inset 0 0 10px red;
+            }
+            25%, 75% {
+                box-shadow: none;
+            }
         }
         .cell.disabled {
             cursor: not-allowed;
@@ -101,9 +123,16 @@
     </style>
 </head>
 <body>
+    <!-- Devボタン：コンソールを表示/非表示に切り替えるためのボタン -->
     <button id="dev-btn">Dev</button>
+    <!-- コンソール：ゲームの状態を表示 -->
     <div id="console"></div>
     <div id="game-area">
+        <!-- カウントダウン表示 -->
+        <div id="countdown">5.00</div>
+        <!-- ターンインジケータ：現在のプレイヤーの番を表示 -->
+        <div id="turn-indicator">あなたの番</div>
+        <!-- ゲームボード：3x3のマスを表示 -->
         <div id="game-board">
             <div class="cell" data-index="0"></div>
             <div class="cell" data-index="1"></div>
@@ -115,8 +144,10 @@
             <div class="cell" data-index="7"></div>
             <div class="cell" data-index="8"></div>
         </div>
+        <!-- リセットボタン：ゲームをリセットする -->
         <button id="reset-btn">リセット</button>
 
+        <!-- 勝敗時のポップアップ -->
         <div id="popup">
             <p id="popup-message"></p>
             <div id="popup-buttons">
@@ -129,6 +160,7 @@
     </div>
 
     <script>
+        // DOM要素の取得
         const cells = document.querySelectorAll('.cell');
         const resetBtn = document.getElementById('reset-btn');
         const popup = document.getElementById('popup');
@@ -138,12 +170,19 @@
         const replayBtn = document.getElementById('replay-btn');
         const consoleElement = document.getElementById('console');
         const devBtn = document.getElementById('dev-btn');
+        const turnIndicator = document.getElementById('turn-indicator');
+        const countdownElement = document.getElementById('countdown');
 
+        // ゲームの状態管理用変数
         let playerHistory = [];
         let computerHistory = [];
         let isReplaying = false;
         let replayTimeouts = [];
+        let countdownInterval;
+        let countdownValue = 5.0;
+        let isPlayerTurn = true;
 
+        // 勝利パターンの組み合わせ
         const winningCombinations = [
             [0, 1, 2],
             [3, 4, 5],
@@ -155,10 +194,12 @@
             [2, 4, 6]
         ];
 
+        // Devボタンのクリックでコンソールの表示/非表示を切り替え
         devBtn.addEventListener('click', () => {
             consoleElement.style.display = consoleElement.style.display === 'none' ? 'block' : 'none';
         });
 
+        // ゲーム盤面の状態をコンソールに記録
         function logBoardState(prefix) {
             let boardState = '';
             cells.forEach((cell) => {
@@ -168,22 +209,58 @@
             consoleElement.scrollTop = consoleElement.scrollHeight;
         }
 
+        // カウントダウンを開始
+        function startCountdown() {
+            clearInterval(countdownInterval);
+            countdownValue = 5.0;
+            countdownElement.textContent = countdownValue.toFixed(2);
+            countdownElement.style.color = '';
+            countdownElement.style.fontWeight = '';
+            countdownElement.style.fontSize = '1.5rem';
+
+            countdownInterval = setInterval(() => {
+                countdownValue -= 0.01;
+                if (countdownValue < 0) countdownValue = 0;
+                countdownElement.textContent = countdownValue.toFixed(2);
+
+                // 2.5秒を切ったらカウントダウンのスタイルを変更
+                if (countdownValue <= 2.5) {
+                    countdownElement.style.color = 'red';
+                    countdownElement.style.fontWeight = 'bold';
+                }
+
+                countdownElement.style.fontSize = `${1.5 + (5 - countdownValue) * 0.16}rem`;
+
+                // カウントダウンが0になったらコンピューターの勝ち
+                if (countdownValue <= 0) {
+                    clearInterval(countdownInterval);
+                    if (isPlayerTurn) {
+                        showPopup('時間切れ！コンピューターの勝ち！');
+                    }
+                }
+            }, 10);
+        }
+
+        // 勝利判定を行う
         function checkWinner(marker) {
             for (let combination of winningCombinations) {
                 if (combination.every(index => cells[index].textContent === marker)) {
                     highlightWinningCombination(combination);
+                    clearInterval(countdownInterval);
                     return true;
                 }
             }
             return false;
         }
 
+        // 勝利時のマスをハイライト
         function highlightWinningCombination(combination) {
             combination.forEach(index => {
                 cells[index].style.backgroundColor = 'red';
             });
         }
 
+        // 勝利可能な手を探す
         function findWinningMove(marker) {
             for (let combo of winningCombinations) {
                 const [a, b, c] = combo;
@@ -195,6 +272,7 @@
             return null;
         }
 
+        // 次の戦略的な手を探す
         function findStrategicMove(marker) {
             for (let combo of winningCombinations) {
                 const [a, b, c] = combo;
@@ -209,6 +287,27 @@
             return null;
         }
 
+        // 次に消えるマーカーを更新
+        function updateNextToRemoveMarkers() {
+            if (playerHistory.length < 3 && computerHistory.length < 3) {
+                return;
+            }
+
+            cells.forEach(cell => {
+                cell.classList.remove('next-to-remove');
+            });
+
+            if (playerHistory.length >= 3) {
+                const nextToRemovePlayerIndex = playerHistory[0];
+                cells[nextToRemovePlayerIndex].classList.add('next-to-remove');
+            }
+            if (computerHistory.length >= 3) {
+                const nextToRemoveComputerIndex = computerHistory[0];
+                cells[nextToRemoveComputerIndex].classList.add('next-to-remove');
+            }
+        }
+
+        // コンピューターの手を決定
         function computerMove() {
             let winningMove = findWinningMove('×');
             if (winningMove !== null) {
@@ -240,6 +339,7 @@
             placeMarker(randomCell, '×');
         }
 
+        // マーカーを配置
         function placeMarker(cell, marker) {
             if (marker === '○' && !isReplaying) {
                 if (playerHistory.length >= 3) {
@@ -251,6 +351,20 @@
                 cell.textContent = marker;
                 cell.classList.add('disabled');
                 logBoardState('you:');
+                updateNextToRemoveMarkers();
+                turnIndicator.textContent = 'CPUの番';
+                isPlayerTurn = false;
+                startCountdown();
+
+                const randomDelay = Math.random() * 2000;
+                setTimeout(() => {
+                    if (!checkWinner('○')) {
+                        computerMove();
+                        turnIndicator.textContent = 'あなたの番';
+                        isPlayerTurn = true;
+                        startCountdown();
+                    }
+                }, randomDelay);
             } else if (marker === '×' && !isReplaying) {
                 if (computerHistory.length >= 3) {
                     const oldIndex = computerHistory.shift();
@@ -261,38 +375,50 @@
                 cell.textContent = marker;
                 cell.classList.add('disabled');
                 logBoardState('cpu:');
+                updateNextToRemoveMarkers();
             }
 
             if (checkWinner(marker)) {
+                clearInterval(countdownInterval);
                 showPopup(marker === '○' ? 'あなたの勝ち！' : 'コンピューターの勝ち！');
             }
         }
 
+        // ゲームをリセット
         function resetGame() {
-            replayTimeouts.forEach(timeout => clearTimeout(timeout)); // リプレイのタイムアウトを全てクリア
-            replayTimeouts = []; // タイムアウトリストをリセット
+            clearInterval(countdownInterval);
+            replayTimeouts.forEach(timeout => clearTimeout(timeout));
+            replayTimeouts = [];
             cells.forEach(cell => {
                 cell.textContent = '';
                 cell.style.backgroundColor = '';
                 cell.classList.remove('disabled');
+                cell.classList.remove('next-to-remove');
             });
             playerHistory = [];
             computerHistory = [];
             isReplaying = false;
+            turnIndicator.textContent = 'あなたの番';
+            isPlayerTurn = true;
+            startCountdown();
             closePopup();
+            consoleElement.textContent = 'Game Start\n'; // コンソールをリセット
         }
 
+        // ポップアップを表示
         function showPopup(message) {
             popupMessage.textContent = message;
             popup.style.display = 'block';
             overlay.style.display = 'block';
         }
 
+        // ポップアップを閉じる
         function closePopup() {
             popup.style.display = 'none';
             overlay.style.display = 'none';
         }
 
+        // リプレイを開始
         function replayGame() {
             resetGame();
             isReplaying = true;
@@ -318,8 +444,10 @@
                         }
                     });
 
+                    updateNextToRemoveMarkers();
+
                     index++;
-                    replayTimeouts.push(setTimeout(nextMove, 1000)); // タイムアウトIDを保存
+                    replayTimeouts.push(setTimeout(nextMove, 1000));
                 } else {
                     ['○', '×'].forEach(marker => {
                         if (checkWinner(marker)) {
@@ -334,22 +462,25 @@
             nextMove();
         }
 
+        // セルがクリックされたときの処理
         cells.forEach(cell => {
             cell.addEventListener('click', () => {
-                if (cell.textContent === '' && !isReplaying && overlay.style.display !== 'block') {
+                if (cell.textContent === '' && !isReplaying && overlay.style.display !== 'block' && isPlayerTurn) {
                     placeMarker(cell, '○');
-                    if (!checkWinner('○')) {
-                        computerMove();
-                    }
                 }
             });
         });
 
+        // リセットボタンが押されたときの処理
         resetBtn.addEventListener('click', resetGame);
+        // リスタートボタンが押されたときの処理
         restartBtn.addEventListener('click', resetGame);
+        // リプレイボタンが押されたときの処理
         replayBtn.addEventListener('click', replayGame);
 
+        // ゲーム開始時にコンソールにログを追加し、カウントダウンを開始
         consoleElement.textContent = 'Game Start\n';
+        startCountdown();
     </script>
 </body>
 </html>
